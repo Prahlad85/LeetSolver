@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Sidebar Overlay (Mobile) */}
         {sidebarOpen && (
           <div 
-            className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[50]"
+            className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[50] mt-16"
             onClick={() => setSidebarOpen(false)}
           />
         )}
@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <aside className={`
           fixed inset-y-0 left-0 z-[55] w-64 bg-card border-r border-border transition-transform duration-300 transform
           md:relative md:translate-x-0 md:h-[calc(100vh-4rem)] md:sticky md:top-16
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          ${sidebarOpen ? "translate-x-0  mt-16" : "-translate-x-full"}
         `}>
           <div className="p-5 border-b border-border">
             <div className="flex items-center gap-3">

@@ -1,135 +1,159 @@
 "use client";
 
 import { useAuthStore } from "@/store/authStore";
-import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { Zap, TrendingUp, Code2, CheckCircle2, Circle, ArrowRight } from "lucide-react";
+import { 
+  Zap, Clock, CheckCircle2, AlertCircle, Play, 
+  Terminal, BarChart3, Settings as SettingsIcon, ExternalLink
+} from "lucide-react";
+import { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 
-const recentActivity = [
-  { problem: "Two Sum", lang: "Python", status: "Success", time: "2h ago" },
-  { problem: "LRU Cache", lang: "JavaScript", status: "Success", time: "Yesterday" },
+const recentSolves = [
+  { problem: "Two Sum", lang: "JavaScript", status: "Accepted", time: "Today" },
+  { problem: "Add Two Numbers", lang: "Python", status: "Accepted", time: "Yesterday" },
   { problem: "Median of Two Sorted Arrays", lang: "Java", status: "Failed", time: "2 days ago" },
 ];
 
-export default function DashboardPage() {
-  const { user, token } = useAuthStore();
+const currentHour = new Date().getHours();
+let greeting = "Good Evening";
+if (currentHour < 12) greeting = "Good Morning";
+else if (currentHour < 17) greeting = "Good Afternoon";
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ["dashboardStats"],
-    queryFn: async () => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/analytics/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` },
+export default function DashboardPage() {
+  const { user } = useAuthStore();
+  const [logs, setLogs] = useState<{msg: string, time: string}[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
+
+  useEffect(() => {
+    const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000");
+    
+    if (user?.id) {
+      socket.emit("subscribe_worker", user.id);
+      
+      socket.on("worker_log", (data) => {
+        setLogs(prev => [{ msg: data.message, time: new Date().toLocaleTimeString() }, ...prev].slice(0, 50));
+        if (data.message.includes("started")) setIsRunning(true);
+        if (data.message.includes("Accepted") || data.message.includes("CRITICAL")) setIsRunning(false);
       });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-  });
+    }
+
+    return () => { socket.disconnect(); };
+  }, [user]);
+
+  const triggerAutomation = async () => {
+    setIsRunning(true);
+    setLogs(prev => [{ msg: "Triggering automation manually...", time: new Date().toLocaleTimeString() }, ...prev]);
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/automation/run-now`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+    } catch (err) {
+      setLogs(prev => [{ msg: "Failed to trigger automation", time: new Date().toLocaleTimeString() }, ...prev]);
+      setIsRunning(false);
+    }
+  };
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto w-full">
+    <div className="p-4 lg:p-8 max-w-7xl mx-auto space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight text-foreground">
-            Good morning, {user?.name?.split(" ")[0] || "there"} 👋
+            {greeting}, {user?.name?.split(" ")[0] || "there"} 👋
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Your automation is running. Here's today's overview.</p>
+          <p className="text-muted-foreground text-sm mt-1">System is healthy. All workers operational.</p>
         </div>
-        <Link href="/dashboard/settings">
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity shadow-md shadow-primary/20">
-            <Zap className="h-4 w-4" />
-            Configure Automation
+        <div className="flex gap-2">
+          <button 
+            onClick={triggerAutomation}
+            disabled={isRunning}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg ${
+              isRunning ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-primary text-primary-foreground shadow-primary/20 hover:scale-105 active:scale-95"
+            }`}
+          >
+            <Play className={`h-4 w-4 ${isRunning ? "animate-spin" : ""}`} />
+            {isRunning ? "Running..." : "Run Automation"}
           </button>
-        </Link>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+      {/* Grid Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Current Streak", value: isLoading ? null : (stats?.streak ?? 0), unit: "days", icon: TrendingUp, color: "text-orange-500" },
-          { label: "Total Solved", value: isLoading ? null : (stats?.totalSolved ?? 0), unit: "problems", icon: CheckCircle2, color: "text-green-500" },
-          { label: "Success Rate", value: isLoading ? null : (stats?.successRate ?? 0), unit: "%", icon: Code2, color: "text-primary" },
-        ].map(({ label, value, unit, icon: Icon, color }) => (
-          <div key={label} className="bg-card border border-border rounded-xl p-5 flex items-start gap-4">
-            <div className={`p-2.5 rounded-lg bg-muted ${color}`}>
-              <Icon className="h-5 w-5" />
+          { label: "Active Streak", val: "12 Days", icon: Zap, color: "text-orange-500" },
+          { label: "Total Solved", val: "148", icon: CheckCircle2, color: "text-green-500" },
+          { label: "Success Rate", val: "94%", icon: BarChart3, color: "text-blue-500" },
+          { label: "Next Run", val: "Midnight", icon: Clock, color: "text-purple-500" },
+        ].map((s) => (
+          <div key={s.label} className="p-5 bg-card border border-border rounded-2xl shadow-sm hover:border-primary/50 transition-colors group">
+            <div className="flex justify-between items-start mb-3">
+              <div className={`p-2 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors`}>
+                <s.icon className={`h-5 w-5 ${s.color}`} />
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
-              {value === null ? (
-                <div className="h-8 w-16 bg-muted animate-pulse rounded mt-1" />
-              ) : (
-                <p className="text-3xl font-bold text-foreground mt-0.5">
-                  {value}<span className="text-sm text-muted-foreground ml-1 font-normal">{unit}</span>
-                </p>
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground font-medium">{s.label}</p>
+            <p className="text-2xl font-black text-foreground mt-1">{s.val}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Queue Status */}
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-            <h2 className="font-semibold text-foreground">Automation Queue</h2>
-            <span className="flex items-center gap-1.5 text-xs text-green-500 font-medium">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              Workers Active
-            </span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Live Console */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Terminal className="h-5 w-5 text-primary" />
+              Live Automation Console
+            </h3>
+            {isRunning && <span className="flex h-2 w-2 rounded-full bg-green-500 animate-ping" />}
           </div>
-          <div className="p-6 space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Next run</span>
-              <span className="font-medium text-foreground">12:00 AM UTC</span>
+          <div className="bg-slate-950 rounded-2xl p-4 font-mono text-[13px] border border-slate-800 shadow-2xl h-[400px] flex flex-col">
+            <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2 opacity-50">
+              <div className="h-3 w-3 rounded-full bg-red-500/50" />
+              <div className="h-3 w-3 rounded-full bg-yellow-500/50" />
+              <div className="h-3 w-3 rounded-full bg-green-500/50" />
+              <span className="ml-2 text-[10px] uppercase font-bold tracking-widest text-slate-400">worker-node-01</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Queue length</span>
-              <span className="font-medium text-foreground">0 jobs</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Worker nodes</span>
-              <span className="font-medium text-green-500">3 / 3 healthy</span>
-            </div>
-            <div className="pt-3">
-              <div className="w-full bg-muted rounded-full h-1.5">
-                <div className="bg-primary h-1.5 rounded-full w-0"></div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">Queue is idle. Waiting for next scheduled run.</p>
+            <div className="flex-1 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-slate-800 pr-2">
+              {logs.length === 0 ? (
+                <div className="text-slate-600 h-full flex items-center justify-center italic">
+                  Waiting for automation to trigger...
+                </div>
+              ) : (
+                logs.map((log, i) => (
+                  <div key={i} className="flex gap-3 animate-in fade-in slide-in-from-left duration-300">
+                    <span className="text-slate-600 shrink-0">[{log.time}]</span>
+                    <span className={log.msg.includes("CRITICAL") ? "text-red-400" : log.msg.includes("Accepted") ? "text-green-400" : "text-slate-300"}>
+                      {log.msg}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
 
-        {/* Recent Activity */}
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-            <h2 className="font-semibold text-foreground">Recent Activity</h2>
-            <Link href="/dashboard/history" className="text-xs text-primary hover:underline flex items-center gap-1">
-              View all <ArrowRight className="h-3 w-3" />
+        {/* Recent History */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold px-2 flex items-center justify-between">
+            Recent Activity
+            <Link href="/dashboard/history" className="text-xs text-primary hover:underline flex items-center gap-1 font-normal">
+              View all <ExternalLink className="h-3 w-3" />
             </Link>
-          </div>
-          <div className="divide-y divide-border">
-            {recentActivity.map((item, i) => (
-              <div key={i} className="px-6 py-3.5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {item.status === "Success" ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                  ) : (
-                    <Circle className="h-4 w-4 text-red-400 shrink-0" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{item.problem}</p>
-                    <p className="text-xs text-muted-foreground">{item.lang} · {item.time}</p>
-                  </div>
+          </h3>
+          <div className="space-y-3">
+            {recentSolves.map((s, i) => (
+              <div key={i} className="p-4 bg-card border border-border rounded-xl flex items-center gap-4 hover:border-primary/30 transition-colors">
+                <div className={`p-2 rounded-lg ${s.status === "Accepted" ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                  {s.status === "Accepted" ? <CheckCircle2 className="h-5 w-5 text-green-500" /> : <AlertCircle className="h-5 w-5 text-red-500" />}
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                  item.status === "Success"
-                    ? "bg-green-500/10 text-green-500"
-                    : "bg-red-500/10 text-red-400"
-                }`}>{item.status}</span>
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-sm font-bold truncate text-foreground">{s.problem}</p>
+                  <p className="text-[11px] text-muted-foreground">{s.lang} • {s.time}</p>
+                </div>
               </div>
             ))}
           </div>

@@ -126,7 +126,7 @@ export default function Navbar() {
         {mobileMenuOpen && (
           <>
             {/* Background Overlay - To catch clicks anywhere else */}
-            <div className="md:hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-[80]" onClick={() => setMobileMenuOpen(false)} />
+            <div className="md:hidden fixed inset-0 z-[80]" onClick={() => setMobileMenuOpen(false)} />
 
             {/* Dropdown Content */}
             <div
