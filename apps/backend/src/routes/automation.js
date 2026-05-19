@@ -17,39 +17,11 @@ const leetcodeQueue = new Queue('leetcode-automation', {
  * /api/automation/trigger:
  *   post:
  *     summary: Trigger LeetCode daily problem automation
- *     tags: [Automation]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               userId:
- *                 type: string
- *               leetcodeSession:
- *                 type: string
- *               preferredLanguage:
- *                 type: string
- *               aiProvider:
- *                 type: string
- *     responses:
- *       200:
- *         description: Automation job added to queue
  */
 router.post('/trigger', async (req, res) => {
   try {
     const { userId, leetcodeSession, preferredLanguage, aiProvider } = req.body;
-    
-    const job = await leetcodeQueue.add('solve-daily', {
-      userId,
-      leetcodeSession,
-      preferredLanguage,
-      aiProvider
-    });
-
+    const job = await leetcodeQueue.add('solve-daily', { userId, leetcodeSession, preferredLanguage, aiProvider });
     res.json({ message: 'Automation triggered', jobId: job.id });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -60,27 +32,14 @@ router.post('/trigger', async (req, res) => {
  * @swagger
  * /api/automation/run-now:
  *   post:
- *     summary: Manually start automation for a specific user using their saved DB settings
- *     tags: [Automation]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               userId:
- *                 type: string
- *     responses:
- *       200:
- *         description: Automation started
+ *     summary: Manually start automation for a specific user
  */
 router.post('/run-now', async (req, res) => {
   try {
     const { userId } = req.body;
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (!user.leetcodeSession) return res.status(400).json({ error: 'LeetCode session not connected in settings' });
+    if (!user.leetcodeSession) return res.status(400).json({ error: 'LeetCode session missing' });
 
     const job = await leetcodeQueue.add('solve-daily', {
       userId: user._id,
@@ -89,7 +48,7 @@ router.post('/run-now', async (req, res) => {
       aiProvider: 'Gemini'
     });
 
-    res.json({ message: 'Automation started successfully', jobId: job.id });
+    res.json({ message: 'Automation started', jobId: job.id });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -97,28 +56,34 @@ router.post('/run-now', async (req, res) => {
 
 /**
  * @swagger
- * /api/automation/status/{jobId}:
- *   get:
- *     summary: Check status of an automation job
- *     tags: [Automation]
- *     parameters:
- *       - in: path
- *         name: jobId
- *         schema:
- *           type: string
- *         required: true
- *         description: Job ID to check
- *     responses:
- *       200:
- *         description: Job status retrieved
+ * /api/automation/sync-progress:
+ *   post:
+ *     summary: Sync past solves from LeetCode
  */
+router.post('/sync-progress', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.leetcodeSession) return res.status(400).json({ error: 'LeetCode session missing' });
+
+    const job = await leetcodeQueue.add('sync-progress', {
+      userId: user._id,
+      leetcodeSession: user.leetcodeSession
+    });
+
+    res.json({ message: 'Sync job started', jobId: job.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/status/:jobId', async (req, res) => {
   try {
     const job = await leetcodeQueue.getJob(req.params.jobId);
     if (!job) return res.status(404).json({ error: 'Job not found' });
-    
     const state = await job.getState();
-    res.json({ id: job.id, state, result: job.returnvalue, failedReason: job.failedReason });
+    res.json({ id: job.id, state, result: job.returnvalue });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

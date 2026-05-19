@@ -4,7 +4,7 @@ import { useAuthStore } from "@/store/authStore";
 import Link from "next/link";
 import { 
   Zap, Clock, CheckCircle2, AlertCircle, Play, 
-  Terminal, BarChart3, Settings as SettingsIcon, ExternalLink
+  Terminal, BarChart3, Settings as SettingsIcon, ExternalLink, History as HistoryIcon
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { io } from "socket.io-client";
@@ -67,6 +67,20 @@ export default function DashboardPage() {
           <p className="text-muted-foreground text-sm mt-1">System is healthy. All workers operational.</p>
         </div>
         <div className="flex gap-2">
+          <button 
+            onClick={async () => {
+              setLogs(prev => [{ msg: "Starting LeetCode sync...", time: new Date().toLocaleTimeString() }, ...prev]);
+              await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/automation/sync-progress`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: user?.id }),
+              });
+            }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-muted text-foreground hover:bg-muted/80 transition-all border border-border"
+          >
+            <HistoryIcon className="h-4 w-4" />
+            Sync Progress
+          </button>
           <button 
             onClick={triggerAutomation}
             disabled={isRunning}

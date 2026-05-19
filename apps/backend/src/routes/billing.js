@@ -1,63 +1,67 @@
 const express = require('express');
 const router = express.Router();
-const Stripe = require('stripe');
-const { authMiddleware } = require('../middlewares/authMiddleware');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const User = require('../models/User');
+const auth = require('../middleware/auth');
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock');
-
-/**
- * @swagger
- * /api/billing/create-checkout-session:
- *   post:
- *     summary: Create a Stripe Checkout Session for subscription upgrade
- *     tags: [Billing]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               plan:
- *                 type: string
- *                 enum: [Pro, Enterprise]
- *     responses:
- *       200:
- *         description: Returns Stripe Checkout URL
- */
-router.post('/create-checkout-session', authMiddleware, async (req, res) => {
+// Create Stripe Checkout Session
+router.post('/create-checkout-session', auth, async (req, res) => {
   try {
-    const { plan } = req.body;
-    let priceId = '';
-
-    if (plan === 'Pro') priceId = process.env.STRIPE_PRICE_PRO || 'price_pro_mock';
-    else if (plan === 'Enterprise') priceId = process.env.STRIPE_PRICE_ENTERPRISE || 'price_enterprise_mock';
-    else return res.status(400).json({ error: 'Invalid plan selected' });
-
-    if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'sk_test_mock') {
-      return res.json({ url: 'https://checkout.stripe.com/pay/mock_session_url' });
-    }
+    const { priceId } = req.body; // Pass 'price_pro' or similar
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
         {
-          price: priceId,
+          price: priceId || process.env.STRIPE_PRICE_PRO_ID, // Your Stripe Price ID
           quantity: 1,
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/settings?canceled=true`,
+      success_url: `${process.env.FRONTEND_URL}/dashboard?success=true`,
+      cancel_url: `${process.env.FRONTEND_URL}/pricing?canceled=true`,
       client_reference_id: req.user.id,
+      customer_email: req.user.email,
     });
 
     res.json({ url: session.url });
   } catch (error) {
+    console.error('Stripe Error:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Webhook to handle successful payments
+// NOTE: This needs stripe-cli to test locally
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const userId = session.client_reference_id;
+
+    // Update user to PRO status in DB
+    await User.findByIdAndUpdate(userId, { 
+      isPro: true,
+      stripeCustomerId: session.customer,
+      subscriptionId: session.subscription
+    });
+    
+    console.log(`User ${userId} upgraded to PRO!`);
+  }
+
+  res.json({ received: true });
 });
 
 module.exports = router;
